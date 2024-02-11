@@ -10,10 +10,6 @@ SENDER_MAIL = os.environ["SENDER_MAIL"]
 TTL_SEC_FOR_TABLE = int(os.environ["TTL_SEC_FOR_TABLE"])
 
 
-def get_record(record: dict):
-    pass
-
-
 def get_ses_region(service_name: str):
     client = boto3.client("dynamodb")
 
@@ -23,12 +19,13 @@ def get_ses_region(service_name: str):
             Key={"ServiceName": {"S": service_name}},
         )
         print(response)
+        ses_region = response["Item"]["RegionName"]["S"]
     except Exception as err:
         print(err)
         # logger.error(err)
         return None
     else:
-        return response["Item"]["RegionName"].get("S", None)
+        return ses_region
 
 
 def lock_table(lockMailKey: str):
@@ -89,21 +86,19 @@ def lambda_handler(event, context):
                 subject = body.get("subject", None)
                 message = body.get("message", None)
                 to_address = body.get("address", None)
-                region = get_ses_region("test_service")
-                # region = "ap-northeast-1"
+                region = get_ses_region(body.get("service_name", None))
 
-                if message is None:
-                    # ログ出力
-                    continue
-                elif to_address is None:
-                    # ログ出力
-                    continue
-                elif region is None:
-                    # ログ出力
+                if (
+                    subject is None
+                    or message is None
+                    or to_address is None
+                    or region is None
+                ):
+                    print(f"{record['messageId']}: Parameters is not correct.")
                     continue
 
                 if not lock_table(record["messageId"]):
-                    print("DynamoDB Lock Error.")
+                    print(f"{record['messageId']}: DynamoDB Lock Error.")
                     continue
 
                 send_mail_response = send_mail(
