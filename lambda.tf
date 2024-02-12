@@ -4,7 +4,7 @@ resource "aws_lambda_function" "mail_send" {
   runtime                        = "python3.12"
   handler                        = "lambda_function.lambda_handler"
   package_type                   = "Zip"
-  filename                       = "lambda/function.zip"
+  filename                       = "./lambda_function.py.zip"
   reserved_concurrent_executions = 1
   publish                        = false
   role                           = aws_iam_role.lambda_send_mail.arn
@@ -27,6 +27,7 @@ resource "aws_lambda_function" "mail_send" {
   lifecycle {
     ignore_changes = [
       environment,
+      filename,
       version,
       source_code_hash,
       source_code_size,
@@ -34,7 +35,7 @@ resource "aws_lambda_function" "mail_send" {
   }
 }
 
-resource "aws_lambda_event_source_mapping" "example" {
+resource "aws_lambda_event_source_mapping" "sqs_mail_send" {
   event_source_arn = aws_sqs_queue.mail_queue.arn
   function_name    = aws_lambda_function.mail_send.arn
 

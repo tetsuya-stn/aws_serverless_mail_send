@@ -78,7 +78,6 @@ def send_mail(source: str, to_address: str, subject: str, body: str, region: str
 def lambda_handler(event, context):
     print(event)
     batch_item_failures = []
-    sqs_batch_response = {}
     if event:
         for record in event["Records"]:
             try:
@@ -94,11 +93,11 @@ def lambda_handler(event, context):
                     or to_address is None
                     or region is None
                 ):
-                    print(f"{record['messageId']}: Parameters is not correct.")
+                    print(f"{record['messageId']}: Parameters not correct.")
                     continue
 
                 if not lock_table(record["messageId"]):
-                    print(f"{record['messageId']}: DynamoDB Lock Error.")
+                    print(f"{record['messageId']}: DynamoDB lock error.")
                     continue
 
                 send_mail_response = send_mail(
@@ -109,7 +108,4 @@ def lambda_handler(event, context):
                 print(err)
                 batch_item_failures.append({"itemIdentifier": record["messageId"]})
 
-        sqs_batch_response["batchItemFailures"] = batch_item_failures
-        print(sqs_batch_response)
-
-    return sqs_batch_response
+    return {"batchItemFailures": batch_item_failures}
