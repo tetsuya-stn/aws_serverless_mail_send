@@ -12,10 +12,8 @@ resource "aws_lambda_function" "mail_send" {
 
   environment {
     variables = {
-      SENDER_MAIL             = "" # 送信元メールアドレス
-      TTL_SEC_FOR_TABLE       = 345600
-      POWERTOOLS_SERVICE_NAME = "MailSendFunction"
-      LOG_LEVEL               = "DEBUG"
+      SENDER_MAIL       = "" # 送信元メールアドレス
+      TTL_SEC_FOR_TABLE = 345600
     }
   }
   ephemeral_storage {

@@ -1,13 +1,21 @@
 import boto3
+import dataclasses
 import json
 import os
 import time
-# from aws_lambda_powertools import Logger
 
-# logger = Logger(child=True)
 
-SENDER_MAIL = os.environ["SENDER_MAIL"]
-TTL_SEC_FOR_TABLE = int(os.environ["TTL_SEC_FOR_TABLE"])
+@dataclasses.dataclass(frozen=True)
+class MailData:
+    subject: str
+    message: str
+    to_address: str
+    sender_address: str = dataclasses.field(init=False)
+
+    def __post_init__(self):
+        if not self.subject or not self.message or not self.to_address:
+            raise ValueError("{Parameters not correct.")
+        object.__setattr__(self, "sender_address", os.environ["SENDER_MAIL"])
 
 
 def get_ses_region(service_name: str):
@@ -22,7 +30,6 @@ def get_ses_region(service_name: str):
         ses_region = response["Item"]["RegionName"]["S"]
     except Exception as err:
         print(err)
-        # logger.error(err)
         return None
     else:
         return ses_region
@@ -31,10 +38,10 @@ def get_ses_region(service_name: str):
 def lock_table(lockMailKey: str):
     try:
         if not lockMailKey:
-            pass  # エラーハンドリング
+            return False
 
         client = boto3.client("dynamodb")
-        expirationUnixTime = int(time.time()) + TTL_SEC_FOR_TABLE
+        expirationUnixTime = int(time.time()) + int(os.environ["TTL_SEC_FOR_TABLE"])
 
         response = client.put_item(
             TableName="MailQueueLockTable",
@@ -52,24 +59,24 @@ def lock_table(lockMailKey: str):
         return False
 
 
-def send_mail(source: str, to_address: str, subject: str, body: str, region: str):
+def send_mail(mail_data: MailData, region: str):
     client = boto3.client("ses", region_name=region)
 
     response = client.send_email(
-        Destination={"ToAddresses": [to_address]},
+        Destination={"ToAddresses": [mail_data.to_address]},
         Message={
             "Body": {
                 "Text": {
                     "Charset": "UTF-8",
-                    "Data": body,
+                    "Data": mail_data.message,
                 }
             },
             "Subject": {
                 "Charset": "UTF-8",
-                "Data": subject,
+                "Data": mail_data.subject,
             },
         },
-        Source=source,
+        Source=mail_data.sender_address,
     )
 
     return response
@@ -82,26 +89,21 @@ def lambda_handler(event, context):
         for record in event["Records"]:
             try:
                 body = json.loads(record["body"])
-                subject = body.get("subject", None)
-                message = body.get("message", None)
-                to_address = body.get("address", None)
                 region = get_ses_region(body.get("service_name", None))
 
-                if (
-                    subject is None
-                    or message is None
-                    or to_address is None
-                    or region is None
-                ):
-                    print(f"{record['messageId']}: Parameters not correct.")
-                    continue
+                mail_data = MailData(
+                    body.get("subject", None),
+                    body.get("message", None),
+                    body.get("address", None),
+                )
 
                 if not lock_table(record["messageId"]):
                     print(f"{record['messageId']}: DynamoDB lock error.")
                     continue
 
                 send_mail_response = send_mail(
-                    SENDER_MAIL, to_address, subject, message, region
+                    mail_data,
+                    region,
                 )
                 print(send_mail_response)
             except Exception as err:
