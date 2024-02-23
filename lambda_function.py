@@ -14,7 +14,7 @@ class MailData:
 
     def __post_init__(self):
         if not self.subject or not self.message or not self.to_address:
-            raise ValueError("{Parameters not correct.")
+            raise ValueError("Parameters not correct.")
         object.__setattr__(self, "sender_address", os.environ["SENDER_MAIL"])
 
 
@@ -29,8 +29,8 @@ def get_ses_region(service_name: str):
         print(response)
         ses_region = response["Item"]["RegionName"]["S"]
     except Exception as err:
-        print(err)
-        return None
+        print(f"get_ses_region error: {err}")
+        return os.environ["SES_DEFAULT_REGION"]
     else:
         return ses_region
 
@@ -62,7 +62,7 @@ def lock_table(lockMailKey: str):
 def send_mail(mail_data: MailData, region: str):
     client = boto3.client("ses", region_name=region)
 
-    response = client.send_email(
+    client.send_email(
         Destination={"ToAddresses": [mail_data.to_address]},
         Message={
             "Body": {
@@ -79,8 +79,6 @@ def send_mail(mail_data: MailData, region: str):
         Source=mail_data.sender_address,
     )
 
-    return response
-
 
 def lambda_handler(event, context):
     print(event)
@@ -91,21 +89,25 @@ def lambda_handler(event, context):
                 body = json.loads(record["body"])
                 region = get_ses_region(body.get("service_name", None))
 
-                mail_data = MailData(
-                    body.get("subject", None),
-                    body.get("message", None),
-                    body.get("address", None),
-                )
+                try:
+                    mail_data = MailData(
+                        body.get("subject", None),
+                        body.get("message", None),
+                        body.get("address", None),
+                    )
+                except ValueError as err:
+                    print(err)
+                    continue
 
-                if not lock_table(record["messageId"]):
+                if lock_table(record["messageId"]):
+                    send_mail(
+                        mail_data,
+                        region,
+                    )
+                else:
                     print(f"{record['messageId']}: DynamoDB lock error.")
                     continue
 
-                send_mail_response = send_mail(
-                    mail_data,
-                    region,
-                )
-                print(send_mail_response)
             except Exception as err:
                 print(err)
                 batch_item_failures.append({"itemIdentifier": record["messageId"]})

@@ -12,8 +12,9 @@ resource "aws_lambda_function" "mail_send" {
 
   environment {
     variables = {
-      SENDER_MAIL       = "" # 送信元メールアドレス
-      TTL_SEC_FOR_TABLE = 345600
+      SENDER_MAIL        = "" # 送信元メールアドレス
+      SES_DEFAULT_REGION = "ap-northeast-1"
+      TTL_SEC_FOR_TABLE  = 345600
     }
   }
   ephemeral_storage {
