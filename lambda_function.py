@@ -5,12 +5,24 @@ import json
 import os
 import time
 
-logger = logging.getLogger()
-logger.setLevel("INFO")
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 @dataclasses.dataclass(frozen=True)
 class MailData:
+    """メールのデータを表すクラス。
+    Attributes:
+        subject (str): メールの件名。
+        message (str): メールの本文。
+        to_address (str): 宛先メールアドレス。
+        sender_address (str): 送信元メールアドレス。環境変数から取得。
+    Raises:
+        ValueError: 件名、本文、宛先メールアドレスのいずれかが空の場合に発生。
+    Notes:
+        このクラスは不変（immutable）です。すべての属性は読み取り専用です。
+    """
+
     subject: str
     message: str
     to_address: str
@@ -32,7 +44,7 @@ def get_ses_region(service_name: str) -> str:
         )
         ses_region = response["Item"]["RegionName"]["S"]
     except Exception as err:
-        logger.warn(f"Failed to get SES region: {err}")
+        logger.warning(f"Failed to get SES region: {err}")
         return os.environ.get("SES_DEFAULT_REGION", "ap-northeast-1")
     else:
         return ses_region
