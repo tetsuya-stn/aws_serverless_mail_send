@@ -1,8 +1,12 @@
 import boto3
 import dataclasses
+import logging
 import json
 import os
 import time
+
+logger = logging.getLogger()
+logger.setLevel("INFO")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -18,7 +22,7 @@ class MailData:
         object.__setattr__(self, "sender_address", os.environ["SENDER_MAIL"])
 
 
-def get_ses_region(service_name: str):
+def get_ses_region(service_name: str) -> str:
     client = boto3.client("dynamodb")
 
     try:
@@ -26,16 +30,15 @@ def get_ses_region(service_name: str):
             TableName="SesRegionManagement",
             Key={"ServiceName": {"S": service_name}},
         )
-        print(response)
         ses_region = response["Item"]["RegionName"]["S"]
     except Exception as err:
-        print(f"get_ses_region error: {err}")
-        return os.environ["SES_DEFAULT_REGION"]
+        logger.warn(f"Failed to get SES region: {err}")
+        return os.environ.get("SES_DEFAULT_REGION", "ap-northeast-1")
     else:
         return ses_region
 
 
-def lock_table(lockMailKey: str):
+def lock_table(lockMailKey: str) -> bool:
     try:
         if not lockMailKey:
             return False
@@ -43,7 +46,7 @@ def lock_table(lockMailKey: str):
         client = boto3.client("dynamodb")
         expirationUnixTime = int(time.time()) + int(os.environ["TTL_SEC_FOR_TABLE"])
 
-        response = client.put_item(
+        client.put_item(
             TableName="MailQueueLockTable",
             Item={
                 "LockMailKey": {"S": lockMailKey},
@@ -51,37 +54,39 @@ def lock_table(lockMailKey: str):
             },
             ConditionExpression="attribute_not_exists(LockMailKey)",
         )
-        print(response)
         return True
 
     except Exception as err:
-        print(err)
+        logger.error(f"Failed to lock table: {err}")
         return False
 
 
-def send_mail(mail_data: MailData, region: str):
+def send_mail(mail_data: MailData, region: str) -> None:
     client = boto3.client("ses", region_name=region)
 
-    client.send_email(
-        Destination={"ToAddresses": [mail_data.to_address]},
-        Message={
-            "Body": {
-                "Text": {
+    try:
+        client.send_email(
+            Destination={"ToAddresses": [mail_data.to_address]},
+            Message={
+                "Body": {
+                    "Text": {
+                        "Charset": "UTF-8",
+                        "Data": mail_data.message,
+                    }
+                },
+                "Subject": {
                     "Charset": "UTF-8",
-                    "Data": mail_data.message,
-                }
+                    "Data": mail_data.subject,
+                },
             },
-            "Subject": {
-                "Charset": "UTF-8",
-                "Data": mail_data.subject,
-            },
-        },
-        Source=mail_data.sender_address,
-    )
+            Source=mail_data.sender_address,
+        )
+    except Exception as err:
+        logger.error(f"Failed to send email: {err}")
 
 
 def lambda_handler(event, context):
-    print(event)
+    logger.info(f"Received event: {event}")
     batch_item_failures = []
     if event:
         for record in event["Records"]:
@@ -96,7 +101,7 @@ def lambda_handler(event, context):
                         body.get("address", None),
                     )
                 except ValueError as err:
-                    print(err)
+                    logger.error(f"Invalid mail data: {err}")
                     continue
 
                 if lock_table(record["messageId"]):
@@ -105,11 +110,11 @@ def lambda_handler(event, context):
                         region,
                     )
                 else:
-                    print(f"{record['messageId']}: DynamoDB lock error.")
+                    logger.error(f"DynamoDB lock error for {record['messageId']}")
                     continue
 
             except Exception as err:
-                print(err)
+                logger.error(f"An error occurred: {err}")
                 batch_item_failures.append({"itemIdentifier": record["messageId"]})
 
     return {"batchItemFailures": batch_item_failures}
